@@ -1,25 +1,77 @@
-from aiogram import Router, F
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from states import Payment
-from keyboards import card_kb, leader_confirm_kb, receipt_admin_kb, main_menu_kb
-from services.currency import usd_rate
+from keyboards import card_kb, leader_confirm_kb, main_menu_kb, receipt_admin_kb
 from services.booking import make_booking_no
+from services.currency import usd_rate
+from states import Payment
 
 router = Router()
 
 
+def status_text(status: str) -> str:
+    return {
+        "leader_pending": "Лидер орқали брон қилинган",
+        "receipt_pending": "Чек текширилмоқда",
+        "approved": "Тўлов тасдиқланган",
+        "rejected": "Рад этилган",
+        "cancelled": "Брон бекор қилинган",
+    }.get(status, status)
+
+
+def full_admin_text(user, package: str, usd: int, uzs: int, rate: float, method: str, booking_no: str) -> str:
+    username = f"@{user['username']}" if user["username"] else "Йўқ"
+    return (
+        "👤 <b>ЯНГИ БРОН / ТЎЛОВ</b>\n\n"
+        f"Ф.И.Ш: <b>{user['full_name']}</b>\n"
+        f"Telegram ID: <code>{user['telegram_id']}</code>\n"
+        f"Username: {username}\n"
+        f"XJ ID: <code>{user['xj_id']}</code>\n"
+        f"Квалификация: {user['qualification']}\n"
+        f"Телефон: {user['phone']}\n"
+        f"Вилоят: {user['region']}\n"
+        f"Жинси: {user['gender']}\n\n"
+        f"Пакет: <b>{package.upper()}</b>\n"
+        f"Нархи: {usd}$ / {uzs:,} сўм\n"
+        f"USD курси: {rate:,.2f} сўм\n"
+        f"Тўлов усули: {method}\n"
+        f"Брон рақами: <code>{booking_no}</code>\n"
+        "Ҳолати: <b>Тасдиқ кутилмоқда</b>"
+    ).replace(",", " ")
+
+
+async def existing_order(c: CallbackQuery, db, user) -> bool:
+    booking = await db.booking_by_user(user["id"])
+    if not booking:
+        return False
+    await c.message.answer(
+        "⚠️ Сиз аввал билет буюртмасини расмийлаштиргансиз.\n\n"
+        f"📦 Пакет: <b>{booking['package'].upper()}</b>\n"
+        f"📌 Ҳолати: <b>{status_text(booking['status'])}</b>\n"
+        f"🔖 Брон рақами: <code>{booking['booking_no']}</code>\n\n"
+        "Бир иштирокчи фақат битта билет олиши мумкин.",
+        reply_markup=main_menu_kb(),
+    )
+    await c.answer()
+    return True
+
+
 @router.callback_query(F.data.startswith("pay_card:"))
-async def card(c: CallbackQuery, config):
+async def card(c: CallbackQuery, db, config):
+    user = await db.user_by_tg(c.from_user.id)
+    if not user:
+        await c.answer("Аввал рўйхатдан ўтинг", show_alert=True)
+        return
+    if await existing_order(c, db, user):
+        return
     package = c.data.split(":", 1)[1]
-    rate = await usd_rate()
+    rate = await usd_rate(config.fallback_usd_rate)
     usd = 150 if package == "econom" else 250
     uzs = round(rate * usd)
     text = (
-        f"💳 <b>ТЎЛОВ МАЪЛУМОТЛАРИ</b>\n\n"
-        f"Пакет: {package.upper()}\n"
-        f"Сумма: {usd}$ = <b>{uzs:,} сўм</b>\n"
+        "💳 <b>ТЎЛОВ МАЪЛУМОТЛАРИ</b>\n\n"
+        f"Пакет: {package.upper()}\nСумма: {usd}$ = <b>{uzs:,} сўм</b>\n"
         f"Карта: <code>{config.card_number}</code>\n"
         f"Қабул қилувчи: <b>{config.card_holder}</b>\n\n"
         "Ушбу тўлов фақат XJ Лидерлар Конгрессида иштирок этиш учун амалга оширилади."
@@ -29,7 +81,13 @@ async def card(c: CallbackQuery, config):
 
 
 @router.callback_query(F.data.startswith("send_receipt:"))
-async def ask_receipt(c: CallbackQuery, state: FSMContext):
+async def ask_receipt(c: CallbackQuery, state: FSMContext, db):
+    user = await db.user_by_tg(c.from_user.id)
+    if not user:
+        await c.answer("Аввал рўйхатдан ўтинг", show_alert=True)
+        return
+    if await existing_order(c, db, user):
+        return
     await state.set_state(Payment.waiting_receipt)
     await state.update_data(package=c.data.split(":", 1)[1])
     await c.message.answer("📸 Тўлов чекини расм кўринишида юборинг.")
@@ -42,43 +100,42 @@ async def receipt(m: Message, state: FSMContext, db, config):
     if not user:
         await m.answer("Аввал рўйхатдан ўтинг.")
         return
-
+    old = await db.booking_by_user(user["id"])
+    if old:
+        await state.clear()
+        await m.answer(
+            f"⚠️ Сизда аввалдан буюртма бор.\nБрон рақами: <code>{old['booking_no']}</code>",
+            reply_markup=main_menu_kb(),
+        )
+        return
     data = await state.get_data()
     package = data["package"]
-    rate = await usd_rate()
+    rate = await usd_rate(config.fallback_usd_rate)
     usd = 150 if package == "econom" else 250
     uzs = round(rate * usd)
-    booking_no = make_booking_no()
-
+    booking_no = await make_booking_no(db)
     payment_id = await db.create_booking(
         user["id"], booking_no, package, usd, uzs, rate,
         "card", "receipt_pending", m.photo[-1].file_id,
     )
     await state.clear()
+    if not payment_id:
+        old = await db.booking_by_user(user["id"])
+        await m.answer(
+            f"⚠️ Буюртма аввал яратилган.\nБрон рақами: <code>{old['booking_no']}</code>",
+            reply_markup=main_menu_kb(),
+        )
+        return
     await m.answer(
         "✅ Чек қабул қилинди.\n"
         f"Брон рақамингиз: <code>{booking_no}</code>\n"
         "Админ текширувидан кейин хабар берилади.",
         reply_markup=main_menu_kb(),
     )
-
-    caption = (
-        "💳 <b>ЯНГИ ТЎЛОВ ЧЕКИ</b>\n"
-        f"👤 {user['full_name']}\n"
-        f"🆔 {user['xj_id']}\n"
-        f"📦 {package.upper()}\n"
-        f"💵 {usd}$ / {uzs:,} сўм\n"
-        f"🔖 {booking_no}"
-    ).replace(",", " ")
-
+    caption = full_admin_text(user, package, usd, uzs, rate, "Карта орқали", booking_no)
     for admin_id in config.admin_ids:
         try:
-            await m.bot.send_photo(
-                admin_id,
-                m.photo[-1].file_id,
-                caption=caption,
-                reply_markup=receipt_admin_kb(payment_id),
-            )
+            await m.bot.send_photo(admin_id, m.photo[-1].file_id, caption=caption, reply_markup=receipt_admin_kb(payment_id))
         except Exception:
             pass
 
@@ -89,7 +146,13 @@ async def need_photo(m: Message):
 
 
 @router.callback_query(F.data.startswith("pay_leader:"))
-async def leader(c: CallbackQuery):
+async def leader(c: CallbackQuery, db):
+    user = await db.user_by_tg(c.from_user.id)
+    if not user:
+        await c.answer("Аввал рўйхатдан ўтинг", show_alert=True)
+        return
+    if await existing_order(c, db, user):
+        return
     package = c.data.split(":", 1)[1]
     text = """🔐 <b>ЛИДЕР ОРҚАЛИ БРОН</b>
 
@@ -108,34 +171,35 @@ async def leader_ok(c: CallbackQuery, db, config):
     if not user:
         await c.answer("Аввал рўйхатдан ўтинг", show_alert=True)
         return
-
+    if await existing_order(c, db, user):
+        return
     package = c.data.split(":", 1)[1]
-    rate = await usd_rate()
+    rate = await usd_rate(config.fallback_usd_rate)
     usd = 150 if package == "econom" else 250
     uzs = round(rate * usd)
-    booking_no = make_booking_no()
-
-    await db.create_booking(
+    booking_no = await make_booking_no(db)
+    booking_id = await db.create_booking(
         user["id"], booking_no, package, usd, uzs, rate,
         "leader", "leader_pending",
     )
+    if not booking_id:
+        old = await db.booking_by_user(user["id"])
+        await c.message.answer(
+            f"⚠️ Сизда аввалдан буюртма бор.\nБрон рақами: <code>{old['booking_no']}</code>",
+            reply_markup=main_menu_kb(),
+        )
+        await c.answer()
+        return
     await c.message.answer(
         "✅ Жойингиз вақтинча брон қилинди.\n\n"
         f"Брон рақамингиз: <code>{booking_no}</code>\n"
         "Ушбу рақамни сақлаб қўйинг.",
         reply_markup=main_menu_kb(),
     )
-
-    admin_text = (
-        "👤 Лидер орқали янги брон\n"
-        f"{user['full_name']}\n"
-        f"XJ ID: {user['xj_id']}\n"
-        f"Пакет: {package.upper()}\n"
-        f"Брон: {booking_no}"
-    )
+    admin_text = full_admin_text(user, package, usd, uzs, rate, "Юқори лидер орқали", booking_no)
     for admin_id in config.admin_ids:
         try:
-            await c.bot.send_message(admin_id, admin_text)
+            await c.bot.send_message(admin_id, admin_text, reply_markup=receipt_admin_kb(booking_id))
         except Exception:
             pass
     await c.answer()
