@@ -59,6 +59,14 @@ def main_menu_kb():
     ])
 
 
+def booked_menu_kb():
+    """Брон ёки тўлов буюртмаси мавжуд иштирокчи учун меню."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📅 1-КУН", callback_data="day:1"), InlineKeyboardButton(text="📅 2-КУН", callback_data="day:2")],
+        [InlineKeyboardButton(text="📅 3-КУН", callback_data="day:3"), InlineKeyboardButton(text="📅 4-КУН", callback_data="day:4")],
+    ])
+
+
 def back_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎟 БИЛЕТ СОТИБ ОЛИШ", callback_data="buy_ticket")],
