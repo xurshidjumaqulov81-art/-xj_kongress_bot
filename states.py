@@ -1,5 +1,6 @@
 from aiogram.fsm.state import State, StatesGroup
 
+
 class Registration(StatesGroup):
     full_name = State()
     xj_id = State()
@@ -9,11 +10,14 @@ class Registration(StatesGroup):
     gender = State()
     confirm = State()
 
+
 class Payment(StatesGroup):
     waiting_receipt = State()
+
 
 class AdminState(StatesGroup):
     set_limit = State()
     broadcast = State()
-    cancel_booking = State()
+    search_person = State()
+    personal_message = State()
 
