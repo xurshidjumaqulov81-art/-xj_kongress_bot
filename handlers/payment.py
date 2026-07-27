@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
-from keyboards import card_kb, leader_confirm_kb, main_menu_kb, receipt_admin_kb
+from keyboards import booked_menu_kb, card_kb, leader_confirm_kb, main_menu_kb, receipt_admin_kb
 from services.booking import make_booking_no
 from services.currency import usd_rate
 from states import Payment
@@ -51,7 +51,7 @@ async def existing_order(c: CallbackQuery, db, user) -> bool:
         f"📌 Ҳолати: <b>{status_text(booking['status'])}</b>\n"
         f"🔖 Брон рақами: <code>{booking['booking_no']}</code>\n\n"
         "Бир иштирокчи фақат битта билет олиши мумкин.",
-        reply_markup=main_menu_kb(),
+        reply_markup=booked_menu_kb(),
     )
     await c.answer()
     return True
@@ -105,7 +105,7 @@ async def receipt(m: Message, state: FSMContext, db, config):
         await state.clear()
         await m.answer(
             f"⚠️ Сизда аввалдан буюртма бор.\nБрон рақами: <code>{old['booking_no']}</code>",
-            reply_markup=main_menu_kb(),
+            reply_markup=booked_menu_kb(),
         )
         return
     data = await state.get_data()
@@ -123,14 +123,14 @@ async def receipt(m: Message, state: FSMContext, db, config):
         old = await db.booking_by_user(user["id"])
         await m.answer(
             f"⚠️ Буюртма аввал яратилган.\nБрон рақами: <code>{old['booking_no']}</code>",
-            reply_markup=main_menu_kb(),
+            reply_markup=booked_menu_kb(),
         )
         return
     await m.answer(
         "✅ Чек қабул қилинди.\n"
         f"Брон рақамингиз: <code>{booking_no}</code>\n"
         "Админ текширувидан кейин хабар берилади.",
-        reply_markup=main_menu_kb(),
+        reply_markup=booked_menu_kb(),
     )
     caption = full_admin_text(user, package, usd, uzs, rate, "Карта орқали", booking_no)
     for admin_id in config.admin_ids:
@@ -186,15 +186,23 @@ async def leader_ok(c: CallbackQuery, db, config):
         old = await db.booking_by_user(user["id"])
         await c.message.answer(
             f"⚠️ Сизда аввалдан буюртма бор.\nБрон рақами: <code>{old['booking_no']}</code>",
-            reply_markup=main_menu_kb(),
+            reply_markup=booked_menu_kb(),
         )
         await c.answer()
         return
     await c.message.answer(
-        "✅ Жойингиз вақтинча брон қилинди.\n\n"
-        f"Брон рақамингиз: <code>{booking_no}</code>\n"
-        "Ушбу рақамни сақлаб қўйинг.",
-        reply_markup=main_menu_kb(),
+        "🎉 <b>ТАБРИКЛАЙМИЗ!</b>\n\n"
+        "Сиз XJ Лидерлар Конгрессига муваффақиятли рўйхатдан ўтдингиз.\n\n"
+        "✅ Жойингиз расмий равишда брон қилинди.\n\n"
+        "🎟 <b>Брон рақамингиз:</b>\n"
+        f"<code>{booking_no}</code>\n\n"
+        "⚠️ Ушбу брон рақамини йўқотманг ва эҳтиёт қилиб сақланг. "
+        "Конгрессда иштирок этишингиз ҳамда билетингизни кетиш куни ёки "
+        "юқори лидерингиз орқали олишингиз учун шу рақам керак бўлади.\n\n"
+        "🏆 XJ Лидерлар Конгрессида янги куч, янги мақсад ва янги натижалар билан "
+        "янада кучли лидер бўлиб қайта туғилишингизни тилаймиз!\n\n"
+        "XJ оиласига бўлган ишончингиз учун раҳмат!",
+        reply_markup=booked_menu_kb(),
     )
     admin_text = full_admin_text(user, package, usd, uzs, rate, "Юқори лидер орқали", booking_no)
     for admin_id in config.admin_ids:
