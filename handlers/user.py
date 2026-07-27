@@ -180,7 +180,10 @@ async def confirm_registration(callback: CallbackQuery, state: FSMContext, db):
         return
     await state.clear()
     await callback.message.answer(
-        "✅ <b>Маълумотларингиз қабул қилинди!</b>\n\nСиз 📅 Энди конгресс дастури билан танишинг ва 🎟 «БИЛЕТ СОТИБ ОЛИШ» тугмаси орқали иштирокингизни расмийлашт",
+        "✅ <b>Маълумотларингиз қабул қилинди!</b>\n\n"
+        "📅 Энди конгресс дастури билан танишинг ва "
+        "🎟 «<b>БИЛЕТ СОТИБ ОЛИШ</b>» тугмаси орқали "
+        "иштирокингизни расмийлаштиринг.",
         reply_markup=main_menu_kb(),
     )
     await callback.answer()
@@ -252,4 +255,5 @@ async def package_details(callback: CallbackQuery, db, config):
 async def show_offer(callback: CallbackQuery):
     await callback.message.answer(OFFER)
     await callback.answer()
+
 
