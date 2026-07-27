@@ -180,7 +180,7 @@ async def confirm_registration(callback: CallbackQuery, state: FSMContext, db):
         return
     await state.clear()
     await callback.message.answer(
-        "🎉 <b>ТАБРИКЛАЙМИЗ!</b>\n\nСиз XJ Лидерлар Конгрессига муваффақиятли рўйхатдан ўтдингиз.",
+        "✅ <b>Маълумотларингиз қабул қилинди!</b>\n\nСиз 📅 Энди конгресс дастури билан танишинг ва 🎟 «БИЛЕТ СОТИБ ОЛИШ» тугмаси орқали иштирокингизни расмийлашт",
         reply_markup=main_menu_kb(),
     )
     await callback.answer()
